@@ -413,137 +413,133 @@ class ProdutoController {
         ativo,
       } = req.body
 
-      const produtoExistente = await db.get(
-        'SELECT * FROM produtos WHERE id = ?',
-        [id]
-      )
-      if (!produtoExistente) {
-        return res.status(404).json({
-          success: false,
-          error: 'Produto não encontrado',
-        })
+      const supabase = require('../utils/supabase')
+      const { sanitizeForDb } = require('../utils/sanitize')
+
+      // 1) Verificar existência
+      const { data: existente, error: exErr } = await supabase.client
+        .from('produtos')
+        .select('*')
+        .eq('id', parseInt(id))
+        .single()
+      if (exErr || !existente) {
+        return res.status(404).json({ success: false, error: 'Produto não encontrado' })
       }
 
-      // Verificar códigos únicos (exceto o próprio produto)
-      if (codigo_barras && codigo_barras !== produtoExistente.codigo_barras) {
-        const existeCodigoBarras = await db.get(
-          'SELECT id FROM produtos WHERE codigo_barras = ? AND id != ?',
-          [codigo_barras, id]
-        )
-        if (existeCodigoBarras) {
-          return res.status(400).json({
-            success: false,
-            error: 'Código de barras já existe',
-          })
+      // 2) Verificar unicidade de códigos (se alterados)
+      const pid = parseInt(id)
+      const cb = (codigo_barras || '').trim()
+      if (cb && cb !== (existente.codigo_barras || '')) {
+        const { data: cRows, error: cErr } = await supabase.client
+          .from('produtos')
+          .select('id')
+          .eq('codigo_barras', cb)
+          .neq('id', pid)
+          .limit(1)
+        if (cErr) throw cErr
+        if (Array.isArray(cRows) && cRows.length > 0) {
+          return res.status(400).json({ success: false, error: 'Código de barras já existe' })
         }
       }
 
-      if (
-        codigo_interno &&
-        codigo_interno !== produtoExistente.codigo_interno
-      ) {
-        const existeCodigoInterno = await db.get(
-          'SELECT id FROM produtos WHERE codigo_interno = ? AND id != ?',
-          [codigo_interno, id]
-        )
-        if (existeCodigoInterno) {
-          return res.status(400).json({
-            success: false,
-            error: 'Código interno já existe',
-          })
+      const ci = (codigo_interno || '').trim()
+      if (ci && ci !== (existente.codigo_interno || '')) {
+        const { data: iRows, error: iErr } = await supabase.client
+          .from('produtos')
+          .select('id')
+          .eq('codigo_interno', ci)
+          .neq('id', pid)
+          .limit(1)
+        if (iErr) throw iErr
+        if (Array.isArray(iRows) && iRows.length > 0) {
+          return res.status(400).json({ success: false, error: 'Código interno já existe' })
         }
       }
 
-      await db.run(
-        `
-        UPDATE produtos SET
-          nome = ?, descricao = ?, codigo_barras = ?, codigo_interno = ?,
-          categoria_id = ?, fornecedor_id = ?, tipo = ?, preco_custo = ?,
-          preco_venda = ?, margem_lucro = ?, estoque_minimo = ?,
-          estoque_maximo = ?, localizacao = ?, observacoes = ?, ativo = ?,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `,
-        [
-          nome.trim(),
-          descricao?.trim(),
-          codigo_barras?.trim(),
-          codigo_interno?.trim(),
-          categoria_id || null,
-          fornecedor_id || null,
-          tipo || 'peca',
-          preco_custo || 0,
-          preco_venda || 0,
-          margem_lucro || 0,
-          estoque_minimo || 5,
-          estoque_maximo || 100,
-          localizacao?.trim(),
-          observacoes?.trim(),
-          ativo ? 1 : 0,
-          id,
-        ]
-      )
-
-      // Verificar alertas após atualização
-      const produtoVerificacao = await db.get(
-        'SELECT * FROM produtos WHERE id = ?',
-        [id]
-      )
-      if (produtoVerificacao) {
-        // Remover alertas antigos
-        await db.run('DELETE FROM alertas_estoque WHERE produto_id = ?', [id])
-
-        // Verificar estoque baixo
-        if (
-          produtoVerificacao.estoque_atual <= produtoVerificacao.estoque_minimo
-        ) {
-          const tipoAlerta =
-            produtoVerificacao.estoque_atual === 0
-              ? 'estoque_zerado'
-              : 'estoque_baixo'
-          const mensagemAlerta = 
-            produtoVerificacao.estoque_atual === 0 
-              ? `Produto ${produtoVerificacao.nome} está com estoque zerado`
-              : `Produto ${produtoVerificacao.nome} está com estoque baixo (${produtoVerificacao.estoque_atual} unidades)`
-          await db.run(
-            'INSERT INTO alertas_estoque (produto_id, tipo, mensagem) VALUES (?, ?, ?)',
-            [id, tipoAlerta, mensagemAlerta]
-          )
-        }
-
-        // Verificar estoque alto (opcional)
-        if (
-          produtoVerificacao.estoque_atual >= produtoVerificacao.estoque_maximo
-        ) {
-          const mensagemEstoqueAlto = `Produto ${produtoVerificacao.nome} está com estoque alto (${produtoVerificacao.estoque_atual} unidades)`
-          await db.run(
-            'INSERT INTO alertas_estoque (produto_id, tipo, mensagem) VALUES (?, ?, ?)',
-            [id, 'estoque_alto', mensagemEstoqueAlto]
-          )
-        }
-      }
-
-      const produtoAtualizado = await db.get(
-        'SELECT * FROM produtos WHERE id = ?',
-        [id]
-      )
-
-      LoggerManager.audit('PRODUTO_ATUALIZADO', 'system', {
-        produtoId: id,
-        nome: nome,
+      // 3) Payload sanitizado e sem chaves nullish
+      const basePayload = sanitizeForDb({
+        nome: (nome || '').trim(),
+        descricao: (descricao || '').trim() || null,
+        codigo_barras: cb || null,
+        codigo_interno: ci || null,
+        categoria_id: categoria_id ?? null,
+        fornecedor_id: fornecedor_id ?? null,
+        tipo: tipo === 'servico' ? 'servico' : 'peca',
+        preco_custo: preco_custo ?? 0,
+        preco_venda: preco_venda ?? 0,
+        margem_lucro: margem_lucro ?? 0,
+        estoque_minimo: estoque_minimo ?? 0,
+        estoque_maximo: estoque_maximo ?? 0,
+        localizacao: (localizacao || '').trim() || null,
+        observacoes: (observacoes || '').trim() || null,
+        ativo: typeof ativo === 'boolean' ? ativo : true,
+        updated_at: new Date().toISOString(),
       })
+      const payload = Object.fromEntries(
+        Object.entries(basePayload).filter(([, v]) => v !== null && v !== undefined)
+      )
 
-      res.json({
-        success: true,
-        message: 'Produto atualizado com sucesso',
-        data: produtoAtualizado,
-      })
+      // 4) Atualizar
+      const { data: updated, error: updErr } = await supabase.client
+        .from('produtos')
+        .update(payload)
+        .eq('id', pid)
+        .select('*')
+        .single()
+      if (updErr) {
+        const { respondWithError } = require('../utils/http-error')
+        return respondWithError(res, updErr, 'Falha ao atualizar produto')
+      }
+
+      // 5) Recalcular alerta básico de estoque (sem colunas extras não existentes)
+      try {
+        await supabase.client.from('alertas_estoque').delete().eq('produto_id', pid)
+        const atual = Number(updated.estoque_atual || 0)
+        const minimo = Number(updated.estoque_minimo || 0)
+        const maximo = Number(updated.estoque_maximo || 0)
+        if (atual <= minimo) {
+          const tipoAlerta = atual === 0 ? 'estoque_zero' : 'estoque_baixo'
+          await supabase.client.from('alertas_estoque').insert([{ produto_id: pid, tipo: tipoAlerta }])
+        } else if (maximo && atual >= maximo) {
+          await supabase.client.from('alertas_estoque').insert([{ produto_id: pid, tipo: 'estoque_alto' }])
+        }
+      } catch (_) { /* não falhar a atualização por alerta */ }
+
+      return res.json({ success: true, message: 'Produto atualizado com sucesso', data: updated })
     } catch (error) {
-      LoggerManager.error('Erro ao atualizar produto:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor',
-      })
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Falha ao atualizar produto')
+    }
+  }
+
+  // Excluir produto (Supabase)
+  async destroy(req, res) {
+    try {
+      const { id } = req.params
+      const supabase = require('../utils/supabase')
+
+      // Verificar existência
+      const { data: existente, error: exErr } = await supabase.client
+        .from('produtos')
+        .select('id')
+        .eq('id', parseInt(id))
+        .single()
+      if (exErr || !existente) {
+        return res.status(404).json({ success: false, error: 'Produto não encontrado' })
+      }
+
+      // Excluir (alertas tem ON DELETE CASCADE, mas garantir limpeza)
+      try { await supabase.client.from('alertas_estoque').delete().eq('produto_id', parseInt(id)) } catch (_) {}
+      const { error: delErr } = await supabase.client.from('produtos').delete().eq('id', parseInt(id))
+      if (delErr) {
+        const { respondWithError } = require('../utils/http-error')
+        return respondWithError(res, delErr, 'Falha ao excluir produto')
+      }
+
+      return res.json({ success: true, message: 'Produto excluído com sucesso' })
+    } catch (error) {
+      const { respondWithError } = require('../utils/http-error')
+      return respondWithError(res, error, 'Falha ao excluir produto')
     }
   }
 

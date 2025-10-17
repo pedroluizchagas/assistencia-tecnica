@@ -76,6 +76,7 @@ router.get('/alertas', normalizeListQuery, validateProdutosQuery, produtoControl
 router.get('/codigo/:codigo', produtoController.buscarPorCodigo)
 router.get('/:id', validateIdParam, produtoController.show)
 router.put('/:id', validateIdParam, validateProduto, produtoController.update)
+router.delete('/:id', validateIdParam, produtoController.destroy)
 router.post('/:id/movimentar', validateIdParam, produtoController.movimentarEstoque)
 router.put(
   '/alertas/:id/resolver',
