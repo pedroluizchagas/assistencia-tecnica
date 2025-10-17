@@ -5,6 +5,7 @@ const { validateOrdem, validateOrdemUpdate, validateId } = require('../middlewar
 const { handleUpload } = require('../middlewares/upload')
 const { normalizeListQuery, normalizeStatsQuery } = require('../middlewares/normalizeQuery')
 const { validateOrdensQuery, validateStatsQuery, validateIdParam } = require('../middlewares/zodValidation')
+const { normalizeOrdemBody } = require('../middlewares/normalizeBody')
 
 // GET /api/ordens - Listar todas as ordens
 router.get('/', normalizeListQuery, validateOrdensQuery, ordemController.index)
@@ -19,13 +20,13 @@ router.get('/relatorio', normalizeStatsQuery, validateStatsQuery, ordemControlle
 router.get('/:id', validateIdParam, ordemController.show)
 
 // POST /api/ordens - Criar nova ordem (com upload de fotos)
-router.post('/', handleUpload, validateOrdem, ordemController.store)
+router.post('/', handleUpload, normalizeOrdemBody, validateOrdem, ordemController.store)
 
 // PUT /api/ordens/:id - Atualizar ordem
-router.put('/:id', validateIdParam, validateOrdemUpdate, ordemController.update)
+router.put('/:id', validateIdParam, normalizeOrdemBody, validateOrdemUpdate, ordemController.update)
 
 // PATCH /api/ordens/:id/status - Alterar apenas o status da ordem
-router.patch('/:id/status', validateIdParam, ordemController.alterarStatus)
+router.patch('/:id/status', validateIdParam, normalizeOrdemBody, ordemController.alterarStatus)
 
 // DELETE /api/ordens/:id - Deletar ordem
 router.delete('/:id', validateIdParam, ordemController.destroy)
