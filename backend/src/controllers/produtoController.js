@@ -117,9 +117,9 @@ class ProdutoController {
       // Histórico de movimentações (limite 50)
       const { data: movimentacoesRows, error: movErr } = await supabase.client
         .from('movimentacoes_estoque')
-        .select('tipo, quantidade, quantidade_anterior, quantidade_atual, preco_unitario, valor_total, motivo, observacoes, data_movimentacao, usuario, referencia_tipo, referencia_id')
+        .select('tipo, quantidade, quantidade_anterior, quantidade_atual, preco_unitario, valor_total, motivo, observacoes, created_at, usuario, referencia_tipo, referencia_id')
         .eq('produto_id', parseInt(id))
-        .order('data_movimentacao', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(50)
       if (movErr) throw movErr
 
@@ -872,7 +872,7 @@ class ProdutoController {
       // Buscar movimentações (pelo menos campos usados)
       const { data: movRows, error: movErr } = await supabase.client
         .from('movimentacoes_estoque')
-        .select('id, tipo, quantidade, created_at, data_movimentacao')
+        .select('id, tipo, quantidade, created_at')
       if (movErr) {
         const { LoggerManager } = require('../utils/logger')
         LoggerManager.warn('Tabela movimentacoes_estoque não encontrada:', movErr.message)
@@ -904,7 +904,7 @@ class ProdutoController {
       const agora = new Date()
       const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1)
       const movimentacoesMes = movimentacoes.filter(m => {
-        const dataMovimentacao = new Date(m.created_at || m.data_movimentacao)
+        const dataMovimentacao = new Date(m.created_at)
         return dataMovimentacao >= inicioMes
       })
 

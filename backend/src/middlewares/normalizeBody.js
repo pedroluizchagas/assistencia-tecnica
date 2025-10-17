@@ -11,9 +11,9 @@ function normalizeStatus(value) {
     ['recebido', 'aguardando'],
     ['em analise', 'em_andamento'],
     ['em analise', 'em_andamento'],
+    ['em reparo', 'em_andamento'],
     ['aguardando pecas', 'aguardando_peca'],
     ['aguardando peca', 'aguardando_peca'],
-    ['em reparo', 'em_andamento'],
     ['pronto', 'pronto'],
     ['entregue', 'entregue'],
     ['cancelado', 'cancelado'],
@@ -40,4 +40,4 @@ function normalizeOrdemBody(req, _res, next) {
   }
 }
 
-module.exports = { normalizeOrdemBody }
+module.exports = { normalizeOrdemBody, normalizeStatus }
