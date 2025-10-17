@@ -8,15 +8,15 @@ function normalizeStatus(value) {
 
   // Mapeamentos da UI -> DB
   const map = new Map([
-    ['recebido', 'aguardando'],
+    ['Recebido', 'aguardando'],
     ['em analise', 'em_andamento'],
-    ['em analise', 'em_andamento'],
-    ['em reparo', 'em_andamento'],
-    ['aguardando pecas', 'aguardando_peca'],
+    ['Em Análise', 'em_andamento'],
+    ['Em Reparo', 'em_andamento'],
+    ['Aguardando Peças', 'aguardando_peca'],
     ['aguardando peca', 'aguardando_peca'],
-    ['pronto', 'pronto'],
-    ['entregue', 'entregue'],
-    ['cancelado', 'cancelado'],
+    ['Pronto', 'pronto'],
+    ['Entregue', 'entregue'],
+    ['Cancelado', 'cancelado'],
   ])
 
   if (map.has(normalized)) return map.get(normalized)
