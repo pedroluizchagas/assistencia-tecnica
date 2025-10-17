@@ -1,4 +1,7 @@
 // Middleware de validação para clientes
+const { normalizeStatus } = require('./normalizeBody')
+
+// Middleware de validação para clientes
 const validateCliente = (req, res, next) => {
   const { nome, telefone } = req.body
 
@@ -31,6 +34,11 @@ const validateCliente = (req, res, next) => {
 // Middleware de validação para ordens de serviço
 const validateOrdem = (req, res, next) => {
   const { cliente_id, equipamento, defeito } = req.body
+
+  // Normalizar status da UI para tokens do banco
+  if (typeof req.body.status !== 'undefined') {
+    req.body.status = normalizeStatus(req.body.status)
+  }
 
   // Validações obrigatórias
   if (!cliente_id || isNaN(cliente_id)) {
@@ -194,6 +202,11 @@ const validateId = (req, res, next) => {
 const validateOrdemUpdate = (req, res, next) => {
   const { cliente_id, equipamento, defeito, status, prioridade } = req.body
 
+  // Normalizar status da UI para tokens do banco
+  if (typeof req.body.status !== 'undefined') {
+    req.body.status = normalizeStatus(req.body.status)
+  }
+
   // Validação de cliente_id se fornecido
   if (cliente_id !== undefined && (isNaN(cliente_id) || cliente_id <= 0)) {
     return res.status(400).json({
@@ -225,7 +238,7 @@ const validateOrdemUpdate = (req, res, next) => {
       'entregue',
       'cancelado'
     ]
-    if (!statusValidos.includes(status)) {
+    if (!statusValidos.includes(req.body.status)) {
       return res.status(400).json({
         error: `Status deve ser um dos seguintes: ${statusValidos.join(', ')}`,
       })
