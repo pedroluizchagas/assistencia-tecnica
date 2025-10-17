@@ -229,13 +229,74 @@ class OrdemController {
 
       for (const p of pecas) {
         const valorTotal = (parseFloat(p.quantidade) || 0) * (parseFloat(p.valor_unitario) || 0)
-        const { error } = await supabase.client.from('ordem_pecas').insert([{ ordem_id: ordemId, nome_peca: p.nome_peca, codigo_peca: p.codigo_peca || null, quantidade: p.quantidade || 1, valor_unitario: p.valor_unitario || null, fornecedor: p.fornecedor || null, observacoes: p.observacoes || null }])
-        if (error) throw error
+        try {
+          const { error } = await supabase.client.from('ordem_pecas').insert([
+            {
+              ordem_id: ordemId,
+              nome_peca: p.nome_peca,
+              codigo_peca: p.codigo_peca || null,
+              quantidade: p.quantidade || 1,
+              valor_unitario: p.valor_unitario || null,
+              fornecedor: p.fornecedor || null,
+              observacoes: p.observacoes || null,
+            },
+          ])
+          if (error) throw error
+        } catch (e) {
+          const msg = String(e?.message || '')
+          if (msg.includes('column "descricao"') || msg.includes('null value in column "descricao"')) {
+            // Compatibilidade com schema antigo que exige descricao NOT NULL
+            const { error: e2 } = await supabase.client.from('ordem_pecas').insert([
+              {
+                ordem_id: ordemId,
+                nome_peca: p.nome_peca,
+                descricao: p.nome_peca,
+                codigo_peca: p.codigo_peca || null,
+                quantidade: p.quantidade || 1,
+                valor_unitario: p.valor_unitario || null,
+                fornecedor: p.fornecedor || null,
+                observacoes: p.observacoes || null,
+              },
+            ])
+            if (e2) throw e2
+          } else {
+            throw e
+          }
+        }
       }
 
       for (const s of servicos) {
-        const { error } = await supabase.client.from('ordem_servicos').insert([{ ordem_id: ordemId, descricao_servico: s.descricao_servico, tempo_gasto: s.tempo_gasto || null, valor_servico: s.valor_servico || null, tecnico: s.tecnico || tecnico_responsavel || null, observacoes: s.observacoes || null }])
-        if (error) throw error
+        try {
+          const { error } = await supabase.client.from('ordem_servicos').insert([
+            {
+              ordem_id: ordemId,
+              descricao_servico: s.descricao_servico,
+              tempo_gasto: s.tempo_gasto || null,
+              valor_servico: s.valor_servico || null,
+              tecnico: s.tecnico || tecnico_responsavel || null,
+              observacoes: s.observacoes || null,
+            },
+          ])
+          if (error) throw error
+        } catch (e) {
+          const msg = String(e?.message || '')
+          if (msg.includes('column "descricao_servico"')) {
+            // Compatibilidade com schema antigo que usa 'descricao'
+            const { error: e2 } = await supabase.client.from('ordem_servicos').insert([
+              {
+                ordem_id: ordemId,
+                descricao: s.descricao_servico,
+                tempo_estimado: s.tempo_gasto || null,
+                valor: s.valor_servico || null,
+                tecnico: s.tecnico || tecnico_responsavel || null,
+                observacoes: s.observacoes || null,
+              },
+            ])
+            if (e2) throw e2
+          } else {
+            throw e
+          }
+        }
       }
 
       await supabase.client.from('ordem_historico').insert([{ ordem_id: ordemId, status_novo: status, observacoes: 'Ordem de serviço criada', usuario: 'Sistema' }])
@@ -715,35 +776,74 @@ class OrdemController {
       for (const p of pecas || []) {
         if (!p || !p.nome_peca) continue
         const valorTotal = (parseFloat(p.quantidade) || 0) * (parseFloat(p.valor_unitario) || 0)
-        await supabase.client.from('ordem_pecas').insert([
-          {
-            ordem_id: parseInt(id),
-            nome_peca: p.nome_peca,
-            codigo_peca: p.codigo_peca || null,
-            quantidade: p.quantidade || 1,
-            valor_unitario: p.valor_unitario || null,
-            // valor_total: valorTotal, // omitido para compatibilidade com colunas geradas
-            fornecedor: p.fornecedor || null,
-            observacoes: p.observacoes || null,
-          },
-        ])
+        try {
+          const { error } = await supabase.client.from('ordem_pecas').insert([
+            {
+              ordem_id: ordemId,
+              nome_peca: p.nome_peca,
+              codigo_peca: p.codigo_peca || null,
+              quantidade: p.quantidade || 1,
+              valor_unitario: p.valor_unitario || null,
+              fornecedor: p.fornecedor || null,
+              observacoes: p.observacoes || null,
+            },
+          ])
+          if (error) throw error
+        } catch (e) {
+          const msg = String(e?.message || '')
+          if (msg.includes('column "descricao"') || msg.includes('null value in column "descricao"')) {
+            // Compatibilidade com schema antigo que exige descricao NOT NULL
+            const { error: e2 } = await supabase.client.from('ordem_pecas').insert([
+              {
+                ordem_id: ordemId,
+                nome_peca: p.nome_peca,
+                descricao: p.nome_peca,
+                codigo_peca: p.codigo_peca || null,
+                quantidade: p.quantidade || 1,
+                valor_unitario: p.valor_unitario || null,
+                fornecedor: p.fornecedor || null,
+                observacoes: p.observacoes || null,
+              },
+            ])
+            if (e2) throw e2
+          } else {
+            throw e
+          }
+        }
       }
 
-      await supabase.client.from('ordem_servicos').delete().eq('ordem_id', parseInt(id))
-      let servicos = []
-      try { if (typeof servicosIn === 'string') servicos = JSON.parse(servicosIn); else if (Array.isArray(servicosIn)) servicos = servicosIn } catch { servicos = [] }
-      for (const s of servicos || []) {
-        if (!s || !s.descricao_servico) continue
-        await supabase.client.from('ordem_servicos').insert([
-          {
-            ordem_id: parseInt(id),
-            descricao_servico: s.descricao_servico,
-            tempo_gasto: s.tempo_gasto || null,
-            valor_servico: s.valor_servico || null,
-            tecnico: s.tecnico || tecnico_responsavel || null,
-            observacoes: s.observacoes || null,
-          },
-        ])
+      for (const s of servicos) {
+        try {
+          const { error } = await supabase.client.from('ordem_servicos').insert([
+            {
+              ordem_id: ordemId,
+              descricao_servico: s.descricao_servico,
+              tempo_gasto: s.tempo_gasto || null,
+              valor_servico: s.valor_servico || null,
+              tecnico: s.tecnico || tecnico_responsavel || null,
+              observacoes: s.observacoes || null,
+            },
+          ])
+          if (error) throw error
+        } catch (e) {
+          const msg = String(e?.message || '')
+          if (msg.includes('column "descricao_servico"')) {
+            // Compatibilidade com schema antigo que usa 'descricao'
+            const { error: e2 } = await supabase.client.from('ordem_servicos').insert([
+              {
+                ordem_id: ordemId,
+                descricao: s.descricao_servico,
+                tempo_estimado: s.tempo_gasto || null,
+                valor: s.valor_servico || null,
+                tecnico: s.tecnico || tecnico_responsavel || null,
+                observacoes: s.observacoes || null,
+              },
+            ])
+            if (e2) throw e2
+          } else {
+            throw e
+          }
+        }
       }
 
       const { data: rows } = await supabase.client
