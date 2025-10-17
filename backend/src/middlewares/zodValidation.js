@@ -34,9 +34,9 @@ const booleanLike = z.preprocess((v) => {
 
 // Schema para filtros de ordens
 const ordensFilterSchema = paginationSchema.extend({
-  status: z.enum(['aberta', 'andamento', 'concluida', 'entregue']).optional(),
+  status: z.enum(['aguardando', 'em_andamento', 'aguardando_peca', 'pronto', 'entregue', 'cancelado']).optional(),
   cliente_id: z.coerce.number().int().positive().optional(),
-  prioridade: z.enum(['baixa', 'media', 'alta', 'urgente']).optional(),
+  prioridade: z.enum(['baixa', 'normal', 'alta', 'urgente']).optional(),
   tecnico: z.string().min(1).max(100).optional(),
 }).merge(dateRangeSchema)
 

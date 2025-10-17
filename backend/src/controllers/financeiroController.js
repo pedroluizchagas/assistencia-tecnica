@@ -21,34 +21,44 @@ class FinanceiroController {
       // Extrair parâmetros de paginação
       const pagination = extractPaginationParams(req.query, { defaultLimit: 25, maxLimit: 100 })
 
-      // 1) Contagem
-      let countQ = supabase.client.from('fluxo_caixa').select('*', { count: 'exact', head: true })
-      if (dataInicio) countQ = countQ.gte('data_movimentacao', dataInicio)
-      if (dataFim) countQ = countQ.lte('data_movimentacao', dataFim)
-      if (tipo) countQ = countQ.eq('tipo', tipo)
-      if (categoria) countQ = countQ.eq('categoria_id', parseInt(categoria))
-      if (formaPagamento) countQ = countQ.eq('forma_pagamento', formaPagamento)
-      const { count, error: countErr } = await countQ
-      if (countErr) throw countErr
-      const total = count || 0
+      try {
+        // 1) Contagem
+        let countQ = supabase.client.from('fluxo_caixa').select('*', { count: 'exact', head: true })
+        if (dataInicio) countQ = countQ.gte('data_movimentacao', dataInicio)
+        if (dataFim) countQ = countQ.lte('data_movimentacao', dataFim)
+        if (tipo) countQ = countQ.eq('tipo', tipo)
+        if (categoria) countQ = countQ.eq('categoria_id', parseInt(categoria))
+        if (formaPagamento) countQ = countQ.eq('forma_pagamento', formaPagamento)
+        const { count, error: countErr } = await countQ
+        if (countErr) throw countErr
+        const total = count || 0
 
-      // 2) Dados com ordenação determinística
-      const offset = pagination.offset
-      let dataQ = supabase.client
-        .from('fluxo_caixa')
-        .select('id, tipo, valor, categoria_id, descricao, data_movimentacao, origem_tipo, origem_id, usuario, cliente_id, forma_pagamento, created_at, venda_id, conta_pagar_id, conta_receber_id')
-      if (dataInicio) dataQ = dataQ.gte('data_movimentacao', dataInicio)
-      if (dataFim) dataQ = dataQ.lte('data_movimentacao', dataFim)
-      if (tipo) dataQ = dataQ.eq('tipo', tipo)
-      if (categoria) dataQ = dataQ.eq('categoria_id', parseInt(categoria))
-      if (formaPagamento) dataQ = dataQ.eq('forma_pagamento', formaPagamento)
+        // 2) Dados com ordenação determinística
+        const offset = pagination.offset
+        let dataQ = supabase.client
+          .from('fluxo_caixa')
+          .select('id, tipo, valor, categoria_id, descricao, data_movimentacao, origem_tipo, origem_id, usuario, cliente_id, forma_pagamento, created_at, venda_id, conta_pagar_id, conta_receber_id')
+        if (dataInicio) dataQ = dataQ.gte('data_movimentacao', dataInicio)
+        if (dataFim) dataQ = dataQ.lte('data_movimentacao', dataFim)
+        if (tipo) dataQ = dataQ.eq('tipo', tipo)
+        if (categoria) dataQ = dataQ.eq('categoria_id', parseInt(categoria))
+        if (formaPagamento) dataQ = dataQ.eq('forma_pagamento', formaPagamento)
 
-      dataQ = dataQ.order('data_movimentacao', { ascending: false }).order('id', { ascending: false }).range(offset, offset + pagination.limit - 1)
+        dataQ = dataQ.order('data_movimentacao', { ascending: false }).order('id', { ascending: false }).range(offset, offset + pagination.limit - 1)
 
-      const { data, error } = await dataQ
-      if (error) throw error
+        const { data, error } = await dataQ
+        if (error) throw error
 
-      res.json(createPaginatedResponse(data || [], total, pagination.page, pagination.limit))
+        return res.json(createPaginatedResponse(data || [], total, pagination.page, pagination.limit))
+      } catch (supErr) {
+        // Fallback quando a tabela ainda não existe no banco
+        const msg = String(supErr?.message || '')
+        if (msg.includes('Could not find the table') || msg.includes('relation') || msg.includes('schema cache')) {
+          LoggerManager.warn('⚠️ Tabela fluxo_caixa não encontrada, retornando lista vazia')
+          return res.json(createPaginatedResponse([], 0, pagination.page, pagination.limit))
+        }
+        throw supErr
+      }
     } catch (error) {
       const { respondWithError } = require('../utils/http-error')
       return respondWithError(res, error, 'Erro ao listar fluxo de caixa')
@@ -63,20 +73,29 @@ class FinanceiroController {
       const { tipo } = req.query
       const supabase = require('../utils/supabase')
 
-      let q = supabase.client
-        .from('categorias_financeiras')
-        .select('id, nome, tipo, descricao, cor, ativo, created_at, updated_at')
-        .eq('ativo', true)
-      if (tipo) q = q.eq('tipo', tipo)
-      q = q.order('tipo', { ascending: true }).order('nome', { ascending: true })
+      try {
+        let q = supabase.client
+          .from('categorias_financeiras')
+          .select('id, nome, tipo, descricao, cor, ativo, created_at, updated_at')
+          .eq('ativo', true)
+        if (tipo) q = q.eq('tipo', tipo)
+        q = q.order('tipo', { ascending: true }).order('nome', { ascending: true })
 
-      const { data, error } = await q
-      if (error) throw error
+        const { data, error } = await q
+        if (error) throw error
 
-      res.json({
-        success: true,
-        data: data || [],
-      })
+        return res.json({
+          success: true,
+          data: data || [],
+        })
+      } catch (supErr) {
+        const msg = String(supErr?.message || '')
+        if (msg.includes('Could not find the table') || msg.includes('relation') || msg.includes('schema cache')) {
+          LoggerManager.warn('⚠️ Tabela categorias_financeiras não encontrada, retornando lista vazia')
+          return res.json({ success: true, data: [] })
+        }
+        throw supErr
+      }
     } catch (error) {
       LoggerManager.error('Erro ao listar categorias financeiras', error)
       res.status(500).json({

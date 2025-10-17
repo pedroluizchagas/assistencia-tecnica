@@ -4,6 +4,17 @@ const supabaseManager = require('../utils/supabase')
 /** @typedef {import('../orm/schema').Produto} Produto */
 /** @typedef {import('../orm/schema').NewProduto} NewProduto */
 
+// Utilitário local: remove chaves com valor null/undefined para evitar
+// erros de colunas inexistentes em ambientes parcialmente migrados
+function dropNullish(obj) {
+  const out = {}
+  for (const [k, v] of Object.entries(obj || {})) {
+    if (v === null || v === undefined) continue
+    out[k] = v
+  }
+  return out
+}
+
 /**
  * Lista produtos com filtros opcionais e paginação.
  * @param {{ 
@@ -106,7 +117,11 @@ async function findById(id) {
  * @returns {Promise<Produto>}
  */
 async function create(input) {
-  const payload = sanitizeForDb(input)
+  // 1) Sanitiza para null onde aplicável
+  const sanitized = sanitizeForDb(input)
+  // 2) Remove chaves null/undefined para evitar referência a colunas ausentes
+  const payload = dropNullish(sanitized)
+
   const { data, error } = await supabaseManager.client
     .from('produtos')
     .insert(payload)
