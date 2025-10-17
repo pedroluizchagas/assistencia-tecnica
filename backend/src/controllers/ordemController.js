@@ -100,13 +100,11 @@ class OrdemController {
       const supabase = require('../utils/supabase')
 
       // Ordem + cliente (via relação)
-      const { data: ordensRows, error: ordErr } = await supabase.client
-        .from('ordens')
-        .select(`
+      const { data: ordensRows, error: ordErr } = await supabase.client.from('ordens').select(`
           id, cliente_id, equipamento, defeito_relatado, status, data_entrada,
           created_at, updated_at, modelo, prioridade, valor_orcamento, valor_final,
           data_previsao, data_conclusao, data_entrega, tecnico_responsavel, observacoes,
-          clientes:clientes (nome, telefone, email, endereco, cidade)
+          clientes:clientes (nome, telefone, email, endereco)
         `)
         .eq('id', parseInt(id))
         .limit(1)
@@ -231,7 +229,7 @@ class OrdemController {
 
       for (const p of pecas) {
         const valorTotal = (parseFloat(p.quantidade) || 0) * (parseFloat(p.valor_unitario) || 0)
-        const { error } = await supabase.client.from('ordem_pecas').insert([{ ordem_id: ordemId, nome_peca: p.nome_peca, codigo_peca: p.codigo_peca || null, quantidade: p.quantidade || 1, valor_unitario: p.valor_unitario || null, valor_total: valorTotal, fornecedor: p.fornecedor || null, observacoes: p.observacoes || null }])
+        const { error } = await supabase.client.from('ordem_pecas').insert([{ ordem_id: ordemId, nome_peca: p.nome_peca, codigo_peca: p.codigo_peca || null, quantidade: p.quantidade || 1, valor_unitario: p.valor_unitario || null, fornecedor: p.fornecedor || null, observacoes: p.observacoes || null }])
         if (error) throw error
       }
 
@@ -724,7 +722,7 @@ class OrdemController {
             codigo_peca: p.codigo_peca || null,
             quantidade: p.quantidade || 1,
             valor_unitario: p.valor_unitario || null,
-            valor_total: valorTotal,
+            // valor_total: valorTotal, // omitido para compatibilidade com colunas geradas
             fornecedor: p.fornecedor || null,
             observacoes: p.observacoes || null,
           },
