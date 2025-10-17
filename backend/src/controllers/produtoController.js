@@ -596,181 +596,108 @@ class ProdutoController {
         referencia_tipo,
       } = req.body
 
-      if (!['entrada', 'saida', 'ajuste', 'perda'].includes(tipo)) {
-        return res.status(400).json({
-          success: false,
-          error: 'Tipo de movimentação inválido',
-        })
+      // Aceitar apenas 'entrada' e 'saida' (schema atual)
+      if (!['entrada', 'saida'].includes(tipo)) {
+        return res.status(400).json({ success: false, error: 'Tipo de movimentação inválido' })
       }
 
-      const produto = await db.get('SELECT * FROM produtos WHERE id = ?', [id])
-      if (!produto) {
-        return res.status(404).json({
-          success: false,
-          error: 'Produto não encontrado',
-        })
+      const supabase = require('../utils/supabase')
+      const pid = parseInt(id)
+
+      // Produto atual
+      const { data: produto, error: prodErr } = await supabase.client
+        .from('produtos')
+        .select('id, nome, estoque_atual, estoque_minimo, estoque_maximo, preco_custo')
+        .eq('id', pid)
+        .single()
+      if (prodErr || !produto) {
+        return res.status(404).json({ success: false, error: 'Produto não encontrado' })
       }
 
-      const quantidadeInt = parseInt(quantidade)
-      if (quantidadeInt <= 0) {
-        return res.status(400).json({
-          success: false,
-          error: 'Quantidade deve ser maior que zero',
-        })
+      const qtd = parseInt(quantidade)
+      if (!Number.isFinite(qtd) || qtd <= 0) {
+        return res.status(400).json({ success: false, error: 'Quantidade deve ser maior que zero' })
       }
 
-      let novaQuantidade = produto.estoque_atual
-
-      if (tipo === 'entrada' || tipo === 'ajuste') {
-        novaQuantidade += quantidadeInt
-      } else if (tipo === 'saida' || tipo === 'perda') {
-        novaQuantidade -= quantidadeInt
+      let novaQuantidade = Number(produto.estoque_atual || 0)
+      if (tipo === 'entrada') {
+        novaQuantidade += qtd
+      } else {
+        novaQuantidade -= qtd
         if (novaQuantidade < 0) {
-          return res.status(400).json({
-            success: false,
-            error: 'Estoque insuficiente',
-          })
+          return res.status(400).json({ success: false, error: 'Estoque insuficiente' })
         }
       }
 
-      // Criar movimentação
-      await db.run(
-        `
-        INSERT INTO movimentacoes_estoque (
-          produto_id, tipo, quantidade, quantidade_anterior, quantidade_atual,
-          preco_unitario, valor_total, motivo, observacoes, usuario,
-          referencia_id, referencia_tipo
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-        [
-          id,
-          tipo,
-          quantidadeInt,
-          produto.estoque_atual,
-          novaQuantidade,
-          preco_unitario || produto.preco_custo || 0,
-          (preco_unitario || produto.preco_custo || 0) * quantidadeInt,
-          motivo,
-          observacoes,
-          'system',
-          referencia_id,
-          referencia_tipo,
-        ]
-      )
+      const precoUnit = Number(preco_unitario || produto.preco_custo || 0)
+      const valorTotal = Number((precoUnit * qtd).toFixed(2))
+
+      // Registrar movimentação
+      const movPayload = {
+        produto_id: pid,
+        tipo,
+        quantidade: qtd,
+        quantidade_anterior: Number(produto.estoque_atual || 0),
+        quantidade_atual: novaQuantidade,
+        preco_unitario: precoUnit,
+        valor_total: valorTotal,
+        motivo: (motivo || '').trim() || null,
+        observacoes: (observacoes || '').trim() || null,
+        usuario: 'system',
+        referencia_id: referencia_id || null,
+        referencia_tipo: (referencia_tipo || '').trim() || null,
+      }
+
+      const { error: movErr } = await supabase.client.from('movimentacoes_estoque').insert(movPayload)
+      if (movErr) {
+        const { respondWithError } = require('../utils/http-error')
+        return respondWithError(res, movErr, 'Falha ao registrar movimentação')
+      }
 
       // Atualizar estoque do produto
-      await db.run(
-        'UPDATE produtos SET estoque_atual = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [novaQuantidade, id]
-      )
-
-      // Verificar alertas
-      const produtoAtualizado = await db.get(
-        'SELECT * FROM produtos WHERE id = ?',
-        [id]
-      )
-      if (produtoAtualizado) {
-        // Remover alertas antigos
-        await db.run('DELETE FROM alertas_estoque WHERE produto_id = ?', [id])
-
-        // Verificar estoque baixo
-        if (
-          produtoAtualizado.estoque_atual <= produtoAtualizado.estoque_minimo
-        ) {
-          const tipoAlerta =
-            produtoAtualizado.estoque_atual === 0
-              ? 'estoque_zerado'
-              : 'estoque_baixo'
-          const mensagemAlerta = 
-            produtoAtualizado.estoque_atual === 0 
-              ? `Produto ${produtoAtualizado.nome} está com estoque zerado`
-              : `Produto ${produtoAtualizado.nome} está com estoque baixo (${produtoAtualizado.estoque_atual} unidades)`
-          await db.run(
-            'INSERT INTO alertas_estoque (produto_id, tipo, mensagem) VALUES (?, ?, ?)',
-            [id, tipoAlerta, mensagemAlerta]
-          )
-        }
-
-        // Verificar estoque alto (opcional)
-        if (
-          produtoAtualizado.estoque_atual >= produtoAtualizado.estoque_maximo
-        ) {
-          const mensagemEstoqueAlto = `Produto ${produtoAtualizado.nome} está com estoque alto (${produtoAtualizado.estoque_atual} unidades)`
-          await db.run(
-            'INSERT INTO alertas_estoque (produto_id, tipo, mensagem) VALUES (?, ?, ?)',
-            [id, 'estoque_alto', mensagemEstoqueAlto]
-          )
-        }
+      const { data: atualizado, error: upErr } = await supabase.client
+        .from('produtos')
+        .update({ estoque_atual: novaQuantidade, updated_at: new Date().toISOString() })
+        .eq('id', pid)
+        .select('id, nome, estoque_atual, estoque_minimo, estoque_maximo')
+        .single()
+      if (upErr) {
+        const { respondWithError } = require('../utils/http-error')
+        return respondWithError(res, upErr, 'Falha ao atualizar estoque do produto')
       }
 
-      // Integração com módulo financeiro para compras de estoque
-      if (
-        tipo === 'entrada' &&
-        motivo === 'compra' &&
-        preco_unitario &&
-        preco_unitario > 0
-      ) {
+      // Ajustar alertas de estoque
+      try {
+        await supabase.client.from('alertas_estoque').delete().eq('produto_id', pid)
+        const atual = Number(atualizado.estoque_atual || 0)
+        const minimo = Number(atualizado.estoque_minimo || 0)
+        const maximo = Number(atualizado.estoque_maximo || 0)
+        if (atual <= minimo) {
+          const tipoAlerta = atual === 0 ? 'estoque_zero' : 'estoque_baixo'
+          await supabase.client.from('alertas_estoque').insert([{ produto_id: pid, tipo: tipoAlerta }])
+        } else if (maximo && atual >= maximo) {
+          await supabase.client.from('alertas_estoque').insert([{ produto_id: pid, tipo: 'estoque_alto' }])
+        }
+      } catch (_) { /* não falhar por alerta */ }
+
+      // Integração financeira básica para compras (não obrigatória)
+      if (tipo === 'entrada' && (motivo || '').trim().toLowerCase() === 'compra' && precoUnit > 0) {
         try {
-          const valorTotal =
-            (preco_unitario || produto.preco_custo) * quantidadeInt
-
-          // Buscar categoria de "Compra de Estoque"
-          const categoriaCompra = await db.get(
-            'SELECT id FROM categorias_financeiras WHERE nome = ? AND tipo = ?',
-            ['Compra de Estoque', 'despesa']
-          )
-
-          // Criar conta a pagar para a compra de estoque
-          await db.run(
-            `
-            INSERT INTO contas_pagar (
-              descricao, valor, categoria_id, fornecedor, data_vencimento,
-              numero_documento, observacoes, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          `,
-            [
-              `Compra de ${produto.nome} (${quantidadeInt} unidades)`,
-              valorTotal,
-              categoriaCompra?.id || null,
-              'Fornecedor de Estoque',
-              new Date().toISOString().split('T')[0], // Vencimento hoje
-              `EST-${Date.now()}`,
-              `Compra de estoque - ${observacoes || ''}`.trim(),
-              'pendente',
-            ]
-          )
-
-          LoggerManager.info('Integração financeira da compra criada', {
-            produtoId: id,
-            valorTotal,
-            quantidade: quantidadeInt,
-          })
-        } catch (error) {
-          LoggerManager.error('Erro na integração financeira da compra:', error)
-          // Não falha a movimentação por erro na integração financeira
-        }
+          const hoje = new Date().toISOString().slice(0, 10)
+          await supabase.client.from('contas_pagar').insert([{
+            descricao: `Compra de ${produto.nome} (${qtd} un)`,
+            valor: valorTotal,
+            categoria_id: null, // opcional
+            fornecedor: 'Fornecedor',
+            data_vencimento: hoje,
+            numero_documento: `EST-${Date.now()}`,
+            observacoes: (observacoes || '').trim() || null,
+            status: 'pendente'
+          }])
+        } catch (_) { /* não interromper a movimentação */ }
       }
 
-      LoggerManager.audit('ESTOQUE_MOVIMENTADO', 'system', {
-        produtoId: id,
-        tipo,
-        quantidade: quantidadeInt,
-        estoqueAnterior: produto.estoque_atual,
-        estoqueAtual: novaQuantidade,
-      })
-
-      res.json({
-        success: true,
-        message: `Estoque ${
-          tipo === 'entrada' ? 'adicionado' : 'removido'
-        } com sucesso`,
-        data: {
-          produto_id: id,
-          estoque_anterior: produto.estoque_atual,
-          estoque_atual: novaQuantidade,
-          quantidade_movimentada: quantidadeInt,
-        },
-      })
+      return res.json({ success: true, message: 'Movimentação registrada com sucesso', data: { produto_id: pid, estoque_atual: novaQuantidade } })
     } catch (error) {
       const { respondWithError } = require('../utils/http-error')
       return respondWithError(res, error, 'Erro ao movimentar estoque')
